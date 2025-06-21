@@ -1,5 +1,6 @@
 module.exports = {
   port: process.env.PORT,
+  jwtSecret: 'testlio-home-task',
   mysql: {
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
