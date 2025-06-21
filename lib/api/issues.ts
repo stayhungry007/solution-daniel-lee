@@ -1,32 +1,56 @@
-"use strict";
+import { Context } from 'koa';
+import { respond } from './responses';
+import { Issue } from '../models/issue';
+import { Revision } from '../models/revision';
 
-const respond = require("./responses");
-const Issue = require("../models/issue");
-const Revision = require("../models/revision");
+interface IssueMethods {
+  get: (context: Context) => Promise<void>;
+  create: (context: Context) => Promise<void>;
+  listAll: (context: Context) => Promise<void>;
+  update: (context: Context) => Promise<void>;
+  getRevisions: (context: Context) => Promise<void>;
+  compareRevisions: (context: Context) => Promise<void>;
+}
 
-const baseUrl = "http://localhost:8080";
+interface IssueRequestBody {
+  title: string;
+  description: string;
+}
 
-const Issues = {};
+interface Changes {
+  [key: string]: { old: string; new: string };
+}
 
-Issues.get = async (context) => {
+export interface Errors {
+  [key: string]: string;  // key is the field name, and value is the error message
+}
+
+const Issues: IssueMethods = {} as IssueMethods;
+
+Issues.get = async (context: Context): Promise<void> => {
   const issue = await Issue.findByPk(context.params.id);
   respond.success(context, { issue });
 };
 
-Issues.create = async (context) => {
-  const { title, description } = context.request.body;
+Issues.create = async (context: Context): Promise<void> => {
+  const { title, description }: IssueRequestBody = context.request.body as IssueRequestBody;
   const email = context.state.user.email;
 
   // Input validation
   if (!title || !description) {
-    return respond.badRequest(context, "Title and description are required");
+    // Pass the error as an object of type Errors
+    return respond.badRequest(context, {
+      title: 'Title is required',
+      description: 'Description is required',
+    });
   }
 
   try {
     const newIssue = await Issue.create({
       title,
       description,
-      created_by: email, // You'll replace this with the actual user
+      created_by: email,
+      updated_by: email,  // Pass updated_by as well
     });
 
     // Create a revision entry for the new issue
@@ -42,7 +66,7 @@ Issues.create = async (context) => {
   }
 };
 
-Issues.listAll = async (context) => {
+Issues.listAll = async (context: Context): Promise<void> => {
   try {
     const issues = await Issue.findAll();
     respond.success(context, issues);
@@ -51,13 +75,17 @@ Issues.listAll = async (context) => {
   }
 };
 
-Issues.update = async (context) => {
+Issues.update = async (context: Context): Promise<void> => {
   const { id } = context.params;
-  const { title, description } = context.request.body;
+  const { title, description }: IssueRequestBody = context.request.body as IssueRequestBody;
   const email = context.state.user.email;
 
   if (!title || !description) {
-    return respond.badRequest(context, "Title and description are required");
+    // Pass the error as an object of type Errors
+    return respond.badRequest(context, {
+      title: 'Title is required',
+      description: 'Description is required',
+    });
   }
 
   try {
@@ -66,7 +94,7 @@ Issues.update = async (context) => {
       return respond.notFound(context);
     }
 
-    const changes = {};
+    const changes: Changes = {};
 
     // Check for changes and track them
     if (issue.title !== title) {
@@ -97,46 +125,58 @@ Issues.update = async (context) => {
   }
 };
 
-Issues.getRevisions = async (context) => {
+Issues.getRevisions = async (context: Context): Promise<void> => {
   const { id } = context.params;
 
   try {
-      // Fetch all revisions for the specified issue
-      const revisions = await Revision.findAll({
-          where: { issue_id: id },
-          order: [['created_at', 'ASC']],  // Sort revisions by creation time
-      });
+    // Fetch all revisions for the specified issue
+    const revisions = await Revision.findAll({
+      where: { issue_id: id },
+      order: [['created_at', 'ASC']], // Sort revisions by creation time
+    });
 
-      if (!revisions || revisions.length === 0) {
-          return respond.notFound(context);
-      }
+    if (!revisions || revisions.length === 0) {
+      return respond.notFound(context);
+    }
 
-      respond.success(context, revisions);
+    respond.success(context, revisions);
   } catch (error) {
-      respond.badRequest(context, error.message);
+    respond.badRequest(context, error.message);
   }
 };
 
-Issues.compareRevisions = async (context) => {
+Issues.compareRevisions = async (context: Context): Promise<void> => {
   const { id, fromRevId, toRevId } = context.params;
-  const fromRev = await Revision.findOne({ where: { issue_id: id, id: fromRevId } });
-  const toRev = await Revision.findOne({ where: { issue_id: id, id: toRevId } });
 
-  if (!fromRev || !toRev) {
+  try {
+    // Ensure you use the correct query syntax
+    const fromRev = await Revision.findOne({
+      where: { issue_id: id, id: fromRevId },  // Correct query
+    });
+
+    const toRev = await Revision.findOne({
+      where: { issue_id: id, id: toRevId },  // Correct query
+    });
+
+    if (!fromRev || !toRev) {
       return respond.notFound(context);
-  }
+    }
 
-  const changes = {};  // Logic to compare the changes between fromRev and toRev
+    const changes: Changes = {};  // Logic to compare changes between revisions
 
-  respond.success(context, {
+    respond.success(context, {
       before: fromRev,
       after: toRev,
-      changes: changes,
-  });
+      changes,
+    });
+  } catch (error) {
+    respond.badRequest(context, error.message);
+  }
 };
 
 
-module.exports = Issues;
+export default Issues;
+
 
 
 /**
