@@ -6,8 +6,11 @@ const jwt = require('koa-jwt');
 
 const config = require('./config');
 const router = require('./lib/routes');
+const swagger = require('./swagger');
 
 const app = new Koa();
+
+swagger(app);
 
 app.use(jwt({ secret: config.jwtSecret }).unless({ path: ['/login', '/register'] }));
 
